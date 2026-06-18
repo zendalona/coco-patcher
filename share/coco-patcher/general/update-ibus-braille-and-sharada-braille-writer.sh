@@ -1,21 +1,9 @@
 #!/bin/bash
 
-the_ppa=ppa.launchpad.net/nalin-x-linux/libbraille-input
+the_ppa=ppa.launchpad.net/nalin-x-linux/ibus-braille-and-sbw
 if ! grep -q "^deb .*$the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-    echo "Adding ppa.launchpad.net/nalin-x-linux/libbraille-input"
-    pkexec add-apt-repository ppa:nalin-x-linux/libbraille-input -y
-fi
-
-the_ppa=ppa.launchpad.net/nalin-x-linux/sbw
-if ! grep -q "^deb .*$the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-    echo "Adding ppa.launchpad.net/nalin-x-linux/sbw"
-    pkexec add-apt-repository ppa:nalin-x-linux/sbw -y
-fi
-
-the_ppa=ppa.launchpad.net/nalin-x-linux/ibus-braille
-if ! grep -q "^deb .*$the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-    echo "Adding ppa.launchpad.net/nalin-x-linux/ibus-braille"
-    pkexec add-apt-repository ppa:nalin-x-linux/ibus-braille -y
+    echo "Adding ppa.launchpad.net/nalin-x-linux/ibus-braille-and-sbw"
+    pkexec add-apt-repository ppa:nalin-x-linux/ibus-braille-and-sbw -y
 fi
 
 pkexec apt-get install -y libbraille-input sharada-braille-writer ibus-braille

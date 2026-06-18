@@ -1,3 +1,48 @@
+coco-patcher (0.2.1.1) jammy; urgency=medium
+
+  * Scripts for installing local LLM's added
+  * Thorium Reader installation script added 
+
+ -- Nalin <nalin.x.linux@gmail.com>  Thu, 18 Jun 2026 15:54:45 +0530
+
+coco-patcher (0.2.0.1) jammy; urgency=medium
+
+  * Added script for installing or updating accessible telegram desktop
+
+ -- Nalin <nalin.x.linux@gmail.com>  Sun, 08 Feb 2026 15:57:00 +0530
+
+coco-patcher (0.1.9.1) jammy; urgency=medium
+
+  * Script to update Orca fixed.
+
+ -- Nalin <nalin.x.linux@gmail.com>  Fri, 23 Feb 2024 11:06:45 +0530
+
+coco-patcher (0.1.8.1) jammy; urgency=medium
+
+  * fix-bluetooth-microphone script added
+  * install-or-update-maths-tutor script added
+  * install-or-update-snakes-and-ladders script added
+
+ -- Nalin <nalin.x.linux@gmail.com>  Sun, 07 Jan 2024 12:20:09 +0530
+
+coco-patcher (0.1.7.2) jammy; urgency=medium
+
+  * Removed script for installing canon lide-300-400 scanner driver
+  * IBus-Braille and Sharada-Braille-Writer script updated 
+  * Orca git version  installation script updated for removing orca packages before installation
+  * Lios script updated for confirming ppa added before updating
+  * Wine installer script updated
+  * TeamViewer installer script updated for avoiding installation of partially downloaded package
+
+ -- Nalin <nalin.x.linux@gmail.com>  Wed, 14 Dec 2022 23:56:16 +0530
+
+coco-patcher (0.1.7.1) jammy; urgency=medium
+
+  * Updated for Accessible-Coconut 22.04
+  * Wine installation script updated
+
+ -- Nalin <nalin.x.linux@gmail.com>  Sat, 03 Dec 2022 19:48:11 +0530
+
 coco-patcher (0.1.6.1) focal; urgency=medium
 
   * Script for compiling and installing RHVoice added
