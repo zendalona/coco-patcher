@@ -1,5 +1,6 @@
 #!/bin/bash
 cd /tmp
+sudo apt install -y curl
 
 echo "Fetching latest Thorium Reader release info..."
 
