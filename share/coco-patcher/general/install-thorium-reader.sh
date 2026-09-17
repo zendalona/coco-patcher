@@ -1,6 +1,6 @@
 #!/bin/bash
 cd /tmp
-
+sudo apt install -y curl
 echo "Fetching latest Thorium Reader release info..."
 
 THORIUM_VERSION=$(curl -s https://api.github.com/repos/edrlab/thorium-reader/releases/latest | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
