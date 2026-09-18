@@ -12,7 +12,7 @@
 #   - Seamless Orca screen reader refresh
 # ==============================================================================
 
-MODULE_VERSION="1.0.0"       # Version used to detect/track installed module version
+MODULE_VERSION="1.0.1"       # Version used to detect/track installed module version
 GITHUB_RELEASE_TAG="v1.0.0"   # GitHub release tag where assets are hosted
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VOICES_DIR_SYS="/usr/share/hear2read/Voices"
@@ -622,6 +622,7 @@ class Hear2ReadProgressWindow(Gtk.Window):
         self.progress_bar.set_text("5%")
         main_box.pack_start(self.progress_bar, False, False, 0)
 
+        # Button Box (Show Details button)
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.details_btn = Gtk.Button(label="Show Details")
         self.details_btn.connect("clicked", self.toggle_details)
@@ -775,7 +776,18 @@ class Hear2ReadProgressWindow(Gtk.Window):
             self.speak_announcement(f"Error: {err_msg}")
             return
         if line.startswith("LOG:"):
-            self.append_log(line[4:].strip())
+            msg = line[4:].strip()
+            if ("error" in msg.lower() or "failed" in msg.lower()) and not self.has_error:
+                self.has_error = True
+                self.last_error_msg = msg
+                self.status_label.set_markup(f"<span color='#d32f2f'><b>Error: {GLib.markup_escape_text(msg)}</b></span>")
+                self.append_log(f"[!] ERROR: {msg}")
+                if not self.scrolled_window.get_visible():
+                    self.toggle_details(None)
+                self.play_accessibility_sound(force=True)
+                self.speak_announcement(f"Error: {msg}")
+                return
+            self.append_log(msg)
             self.play_accessibility_sound()
             return
         if line in ("COMPLETE", "FINISHED"):
@@ -785,7 +797,7 @@ class Hear2ReadProgressWindow(Gtk.Window):
         self.play_accessibility_sound()
 
     def on_complete(self):
-        if self.is_completed:
+        if self.is_completed or self.has_error:
             return
         self.is_completed = True
         self.update_progress(100, "Setup Complete!")
@@ -848,7 +860,7 @@ class Hear2ReadProgressWindow(Gtk.Window):
         if not self.is_completed:
             if self.has_error:
                 self.status_label.set_markup("<span color='#d32f2f'><b>Installation Failed</b></span>")
-                self.sub_label.set_text(self.last_error_msg or "Administrator authorization was not granted.")
+                self.sub_label.set_text(self.last_error_msg or "Installation could not be completed.")
                 dialog = Gtk.MessageDialog(
                     transient_for=self,
                     modal=True,
@@ -856,17 +868,39 @@ class Hear2ReadProgressWindow(Gtk.Window):
                     buttons=Gtk.ButtonsType.CLOSE,
                     text="Hear2Read Installation Failed"
                 )
-                dialog.format_secondary_text(
-                    "Administrator authorization was not granted.\n\n"
-                    "Root privileges are required to configure Speech Dispatcher and install Hear2Read.\n\n"
-                    "Please re-run the installer and authorize when prompted."
-                )
+                err = self.last_error_msg or "An unexpected error occurred during installation."
+                if "authorization" in err.lower() or "privilege" in err.lower() or "root" in err.lower():
+                    sec_text = (
+                        f"{err}\n\n"
+                        "Root privileges are required to configure Speech Dispatcher and install Hear2Read.\n\n"
+                        "Please re-run the installer and authorize when prompted."
+                    )
+                else:
+                    sec_text = (
+                        f"{err}\n\n"
+                        "Please check your internet connection or terminal logs and re-run the installer."
+                    )
+                dialog.format_secondary_text(sec_text)
                 dialog.run()
                 dialog.destroy()
                 Gtk.main_quit()
             else:
                 self.status_label.set_markup("<span color='#d32f2f'><b>Installation Incomplete</b></span>")
                 self.sub_label.set_text("Installation process terminated unexpectedly.")
+                dialog = Gtk.MessageDialog(
+                    transient_for=self,
+                    modal=True,
+                    message_type=Gtk.MessageType.WARNING,
+                    buttons=Gtk.ButtonsType.CLOSE,
+                    text="Hear2Read Installation Incomplete"
+                )
+                dialog.format_secondary_text(
+                    "The installation process terminated before finishing.\n\n"
+                    "Please check your internet connection or terminal logs and re-run the installer."
+                )
+                dialog.run()
+                dialog.destroy()
+                Gtk.main_quit()
 
     def on_window_close(self, widget):
         Gtk.main_quit()
@@ -946,24 +980,17 @@ run_installation_pipeline() {
     echo "LOG: Checking user permissions and system environment..."
 
     HAS_ROOT=0
-    USE_ROOT_WORKER=0
     SUDO_KEEPALIVE_PID=""
-    ROOT_FIFO="/tmp/h2r_fifo_$$.fifo"
+    ROOT_SCRIPT="/tmp/h2r_install_root_$$.sh"
+    printf '#!/bin/sh\nset +e\n' > "$ROOT_SCRIPT"
 
     cleanup_root() {
         [ -n "$SUDO_KEEPALIVE_PID" ] && kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
-        if [ "$USE_ROOT_WORKER" -eq 1 ]; then
-            echo "exit 0" >&3 2>/dev/null || true
-            exec 3>&- 2>/dev/null || true
-            kill "$ROOT_WORKER_PID" 2>/dev/null || true
-            wait "$ROOT_WORKER_PID" 2>/dev/null || true
-            rm -f "$ROOT_FIFO" 2>/dev/null || true
-        fi
-        rm -f "$ASKPASS_SCRIPT" 2>/dev/null || true
+        rm -f "$ROOT_SCRIPT" 2>/dev/null || true
     }
     trap cleanup_root EXIT INT TERM
 
-    # --- Step 1: Acquire administrator privileges UPFRONT using default Linux system dialog ---
+    # --- Step 1: Determine administrator privileges ---
     if [ "$EUID" -eq 0 ]; then
         HAS_ROOT=1
     elif sudo -n true 2>/dev/null; then
@@ -971,46 +998,8 @@ run_installation_pipeline() {
         ( while true; do sudo -n -v 2>/dev/null; sleep 50; done ) &
         SUDO_KEEPALIVE_PID=$!
     elif ([ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]) && command -v pkexec >/dev/null 2>&1; then
-        echo "LOG: Requesting administrator authorization (default Linux authentication box)..."
-        echo "2"
-        echo "# Step 1/6: Requesting administrator authorization..."
-        echo "SOUND"
-
-        # Default Linux PolicyKit dialog (pkexec)
-        ROOT_FIFO="/tmp/h2r_fifo_$$.fifo"
-        rm -f "$ROOT_FIFO"
-        mkfifo -m 600 "$ROOT_FIFO"
-        exec 3<> "$ROOT_FIFO"
-
-        pkexec sh -c "cat '$ROOT_FIFO' | sh" 2>/dev/null &
-        ROOT_WORKER_PID=$!
-        USE_ROOT_WORKER=1
         HAS_ROOT=1
-
-        # Handshake: wait for user to enter password in the PolicyKit dialog
-        sync_marker="/tmp/h2r_auth_sync_$$"
-        rm -f "$sync_marker"
-        echo "touch '$sync_marker'" >&3
-        for i in $(seq 1 600); do
-            [ -f "$sync_marker" ] && break
-            if ! kill -0 "$ROOT_WORKER_PID" 2>/dev/null; then
-                break
-            fi
-            sleep 0.1
-        done
-
-        if [ -f "$sync_marker" ]; then
-            rm -f "$sync_marker"
-            echo "LOG: Administrator authorization granted successfully."
-        else
-            rm -f "$sync_marker"
-            echo "ERROR: Administrator authorization was not granted."
-            echo "LOG: Root privileges are strictly required to configure Speech Dispatcher and install Hear2Read."
-            echo "LOG: Please re-run the installer and authorize when prompted."
-            HAS_ROOT=0
-            sleep 1.0
-            exit 1
-        fi
+        # pkexec path: all root operations will be batched into $ROOT_SCRIPT and executed ONCE at deployment
     elif command -v sudo >/dev/null 2>&1; then
         echo "LOG: Requesting administrator password in terminal..."
         if sudo -v; then
@@ -1039,32 +1028,37 @@ run_installation_pipeline() {
         exit 1
     fi
 
-    # run_as_root: executes root commands in real-time
+    # run_as_root: executes immediately if root/sudo is active, otherwise queues to $ROOT_SCRIPT
     run_as_root() {
         [ "$HAS_ROOT" -eq 0 ] && return 1
         if [ "$EUID" -eq 0 ]; then
             "$@" 2>/dev/null || true
         elif [ -n "$SUDO_KEEPALIVE_PID" ] || sudo -n true 2>/dev/null; then
             sudo -n "$@" 2>/dev/null || true
-        elif [ "$USE_ROOT_WORKER" -eq 1 ]; then
+        else
             local cmd=""
             for arg in "$@"; do
                 cmd="$cmd $(printf '%q' "$arg")"
             done
-            echo "$cmd" >&3
+            echo "$cmd" >> "$ROOT_SCRIPT"
         fi
     }
 
-    sync_root() {
-        if [ "$USE_ROOT_WORKER" -eq 1 ]; then
-            local marker="/tmp/h2r_sync_$$.tmp"
-            rm -f "$marker"
-            echo "touch '$marker'" >&3
-            for i in $(seq 1 60); do
-                [ -f "$marker" ] && break
-                sleep 0.05
-            done
-            rm -f "$marker" 2>/dev/null || true
+    flush_root() {
+        if [ -s "$ROOT_SCRIPT" ] && grep -qv '^#\|^set \|^$' "$ROOT_SCRIPT" 2>/dev/null; then
+            echo "LOG: Applying system-wide configurations (requesting authorization)..."
+            local rc=0
+            if ([ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]) && command -v pkexec >/dev/null 2>&1; then
+                pkexec sh "$ROOT_SCRIPT" || rc=$?
+            else
+                sudo sh "$ROOT_SCRIPT" || rc=$?
+            fi
+            if [ $rc -ne 0 ]; then
+                echo "ERROR: Administrator authorization was not granted."
+                echo "LOG: Root privileges are strictly required to configure Speech Dispatcher and install Hear2Read."
+                exit 1
+            fi
+            printf '#!/bin/sh\nset +e\n' > "$ROOT_SCRIPT"
         fi
     }
 
@@ -1119,11 +1113,11 @@ run_installation_pipeline() {
             for url in "$GITHUB_BUNDLE_URL" "$GITHUB_BUNDLE_FALLBACK"; do
                 echo "LOG: Fetching $url..."
                 if command -v curl >/dev/null 2>&1; then
-                    curl -4 -fSL --connect-timeout 10 --max-time 120 --retry 2 -o "$TMP_BUNDLE" "$url" 2>&1 | grep -v "%" | while read -r line; do
+                    curl -4 -fSL --connect-timeout 10 --speed-limit 1024 --speed-time 20 --max-time 120 --retry 2 -C - -o "$TMP_BUNDLE" "$url" 2>&1 | grep -v "%" | while read -r line; do
                         [ -n "$line" ] && echo "LOG: $line"
                     done || true
                 elif command -v wget >/dev/null 2>&1; then
-                    wget -4 -q --connect-timeout=10 --timeout=45 --tries=2 -O "$TMP_BUNDLE" "$url" 2>&1 | while read -r line; do
+                    wget -4 -q --connect-timeout=10 --timeout=45 --tries=2 -c -O "$TMP_BUNDLE" "$url" 2>&1 | while read -r line; do
                         [ -n "$line" ] && echo "LOG: $line"
                     done || true
                 fi
@@ -1172,22 +1166,33 @@ run_installation_pipeline() {
             BIN_SRC="$SCRIPT_DIR/sd_hear2read"
         elif [ -f "sd_hear2read" ]; then
             BIN_SRC="$(pwd)/sd_hear2read"
+        elif [ -f "$MODULE_SYS/sd_hear2read" ]; then
+            BIN_SRC="$MODULE_SYS/sd_hear2read"
         fi
 
-        if [ -n "$BIN_SRC" ]; then
-            echo "LOG: Staging sd_hear2read binary for system installation ($MODULE_SYS)..."
-            if [ "$HAS_ROOT" -eq 1 ]; then
-                run_as_root mkdir -p "$MODULE_SYS" /usr/local/bin
-                run_as_root cp -f "$BIN_SRC" "$MODULE_SYS/sd_hear2read"
-                run_as_root chmod 755 "$MODULE_SYS/sd_hear2read"
-                run_as_root cp -f "$BIN_SRC" /usr/local/bin/sd_hear2read
-                run_as_root chmod 755 /usr/local/bin/sd_hear2read
-            fi
-            # Clean up any legacy user-local binary copies
-            rm -f "$MODULE_USER/sd_hear2read" "$HOME/.local/bin/sd_hear2read" 2>/dev/null || true
+        if [ -z "$BIN_SRC" ] || [ ! -f "$BIN_SRC" ]; then
+            echo "ERROR: Failed to locate or compile core sd_hear2read binary."
+            echo "LOG: Error: Core engine binary could not be found or built."
+            exit 1
         fi
+
+        echo "LOG: Staging sd_hear2read binary for system installation ($MODULE_SYS)..."
+        if [ "$HAS_ROOT" -eq 1 ]; then
+            run_as_root mkdir -p "$MODULE_SYS" /usr/local/bin
+            run_as_root cp -f "$BIN_SRC" "$MODULE_SYS/sd_hear2read"
+            run_as_root chmod 755 "$MODULE_SYS/sd_hear2read"
+            run_as_root cp -f "$BIN_SRC" /usr/local/bin/sd_hear2read
+            run_as_root chmod 755 /usr/local/bin/sd_hear2read
+        fi
+        # Clean up any legacy user-local binary copies
+        rm -f "$MODULE_USER/sd_hear2read" "$HOME/.local/bin/sd_hear2read" 2>/dev/null || true
 
         # Deploy shared libraries strictly to system
+        if [ ! -f "$SCRIPT_DIR/libhear2readng.so" ] && [ ! -f "/usr/local/lib/libhear2readng.so" ]; then
+            echo "ERROR: Core shared library libhear2readng.so is missing."
+            echo "LOG: Error: libhear2readng.so could not be found."
+            exit 1
+        fi
         if [ -f "$SCRIPT_DIR/libhear2readng.so" ]; then
             echo "LOG: Staging shared libraries for /usr/local/lib/..."
             if [ "$HAS_ROOT" -eq 1 ]; then
@@ -1279,6 +1284,8 @@ run_installation_pipeline() {
 
     TOTAL_NEEDED=${#VOICES_TO_DOWNLOAD[@]}
     CURRENT_INDEX=0
+    FAILED_VOICES=()
+    SUCCESSFUL_VOICES=()
 
     if [ "$TOTAL_NEEDED" -eq 0 ]; then
         echo "LOG: Voice models are up-to-date."
@@ -1302,22 +1309,20 @@ run_installation_pipeline() {
 
             echo "LOG: Downloading $name from GitHub Releases CDN..."
             if command -v curl >/dev/null 2>&1; then
-                curl -4 -fSL --connect-timeout 10 --max-time 180 --retry 2 -o "$tmp_archive" "$github_url" 2>&1 | grep -v "%" | while read -r dline; do
+                curl -4 -fSL --connect-timeout 10 --speed-limit 1024 --speed-time 20 --max-time 180 --retry 2 -C - -o "$tmp_archive" "$github_url" 2>&1 | grep -v "%" | while read -r dline; do
                     [ -n "$dline" ] && echo "LOG: $dline"
                 done || true
             elif command -v wget >/dev/null 2>&1; then
-                wget -4 -q --connect-timeout=10 --timeout=60 --tries=2 -O "$tmp_archive" "$github_url" 2>&1 | while read -r dline; do
+                wget -4 -q --connect-timeout=10 --timeout=60 --tries=2 -c -O "$tmp_archive" "$github_url" 2>&1 | while read -r dline; do
                     [ -n "$dline" ] && echo "LOG: $dline"
                 done || true
             fi
 
             if [ -f "$tmp_archive" ] && [ -s "$tmp_archive" ]; then
                 downloaded=1
-            else
-                echo "LOG: Error: Failed to download $name from GitHub Releases ($github_url)."
             fi
 
-            if [ -f "$tmp_archive" ] && [ -s "$tmp_archive" ]; then
+            if [ "$downloaded" -eq 1 ]; then
                 archive_size=$(du -h "$tmp_archive" | cut -f1)
                 echo "LOG: Download completed for $name ($archive_size)."
                 echo "LOG: Extracting $name voice package..."
@@ -1330,11 +1335,17 @@ run_installation_pipeline() {
                 if [ -n "$installed_onnx" ]; then
                     onnx_size=$(du -h "$installed_onnx" | cut -f1)
                     echo "LOG: Verified voice model: $(basename "$installed_onnx") ($onnx_size)"
+                    SUCCESSFUL_VOICES+=("$name")
+                else
+                    FAILED_VOICES+=("$name")
+                    echo "ERROR: Failed to extract valid voice model for $name."
                 fi
                 echo "SOUND"
                 sleep 0.5
             else
-                echo "LOG: Warning: Failed to download $name package."
+                FAILED_VOICES+=("$name")
+                echo "LOG: Error: Failed to download $name package from GitHub Releases ($github_url)."
+                echo "ERROR: Failed to download $name voice package."
             fi
 
             CURRENT_INDEX=$((CURRENT_INDEX + 1))
@@ -1342,6 +1353,21 @@ run_installation_pipeline() {
     fi
 
     stop_audio_ticker
+
+    # Validate voice downloads
+    if [ "$TOTAL_NEEDED" -gt 0 ] && [ ${#SUCCESSFUL_VOICES[@]} -eq 0 ]; then
+        EXISTING_VOICE_COUNT=$(ls -1 "$VOICES_DIR_SYS"/*.onnx 2>/dev/null | wc -l)
+        if [ "$EXISTING_VOICE_COUNT" -eq 0 ]; then
+            echo "ERROR: Failed to download voice model(s). Please check your internet connection."
+            echo "LOG: Error: Voice download failed and no existing voice models are installed."
+            exit 1
+        else
+            echo "ERROR: Failed to download requested voice model(s) (${FAILED_VOICES[*]})."
+            echo "LOG: Warning: Retaining previously installed voice models."
+        fi
+    elif [ ${#FAILED_VOICES[@]} -gt 0 ]; then
+        echo "LOG: Warning: Some voice models failed to download: ${FAILED_VOICES[*]}."
+    fi
 
     # Queue staged voices for system-wide installation
     if [ "$HAS_ROOT" -eq 1 ] && [ -d "$VOICES_STAGING" ]; then
@@ -1421,6 +1447,11 @@ MODULE_CONF
     # Clean up legacy user module configuration so it does not shadow system configuration
     rm -f "$HOME/.config/speech-dispatcher/modules/hear2read.conf" 2>/dev/null || true
     echo "LOG: Configured hear2read.conf with ${#DISCOVERED_LANGS[@]} configured Indic voice(s)."
+    if [ "${#DISCOVERED_LANGS[@]}" -eq 0 ]; then
+        echo "ERROR: No Indic voice models are available to configure."
+        echo "LOG: Error: At least one voice model must be present to configure Hear2Read."
+        exit 1
+    fi
 
     # Dynamic update of speechd.conf
     update_speechd_conf_file() {
@@ -1600,15 +1631,8 @@ WRAPPER_EOF
         run_as_root rm -rf "$VOICES_STAGING" "$HELPERS_STAGE" 2>/dev/null || true
     fi
 
-    # Finalize root operations (all system files are in place)
-    sync_root
-    if [ "$USE_ROOT_WORKER" -eq 1 ]; then
-        echo "exit 0" >&3 2>/dev/null || true
-        exec 3>&- 2>/dev/null || true
-        wait "$ROOT_WORKER_PID" 2>/dev/null || true
-        rm -f "$ROOT_FIFO" 2>/dev/null || true
-        USE_ROOT_WORKER=0
-    fi
+    # Finalize root operations (apply all queued system files and configurations)
+    flush_root
     echo "LOG: System files, desktop menu and MIME database updated."
 
     echo "88"
