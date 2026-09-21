@@ -12,7 +12,7 @@
 #   - Seamless Orca screen reader refresh
 # ==============================================================================
 
-MODULE_VERSION="1.0.1"       # Version used to detect/track installed module version
+MODULE_VERSION="1.0.3"       # Version used to detect/track installed module version
 GITHUB_RELEASE_TAG="v1.0.0"   # GitHub release tag where assets are hosted
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VOICES_DIR_SYS="/usr/share/hear2read/Voices"
@@ -561,6 +561,7 @@ fi
 PROGRESS_PY="$SCRIPT_DIR/progress_ui.py"
 if [ ! -f "$PROGRESS_PY" ]; then
     PROGRESS_PY="/tmp/hear2read_progress_ui.py"
+    rm -f "$PROGRESS_PY"
     cat << 'PROGRESS_EOF' > "$PROGRESS_PY"
 #!/usr/bin/env python3
 import sys, os, time, subprocess, threading, gi
@@ -721,6 +722,22 @@ class Hear2ReadProgressWindow(Gtk.Window):
         end_mark = self.text_buffer.create_mark(None, self.text_buffer.get_end_iter(), False)
         self.text_view.scroll_to_mark(end_mark, 0.05, True, 0.0, 1.0)
 
+    def speak_announcement(self, text):
+        if not text:
+            return
+        try:
+            if os.path.exists("/usr/bin/spd-say"):
+                subprocess.Popen(["spd-say", "-l", "en", "-e", "-C", "hear2read-setup", text],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif os.path.exists("/usr/bin/espeak-ng"):
+                subprocess.Popen(["espeak-ng", "-s", "160", text],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif os.path.exists("/usr/bin/espeak"):
+                subprocess.Popen(["espeak", "-s", "160", text],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
     def update_progress(self, percent, text=None):
         fraction = max(0.0, min(1.0, float(percent) / 100.0))
         self.progress_bar.set_fraction(fraction)
@@ -773,11 +790,12 @@ class Hear2ReadProgressWindow(Gtk.Window):
             if not self.scrolled_window.get_visible():
                 self.toggle_details(None)
             self.play_accessibility_sound(force=True)
-            self.speak_announcement(f"Error: {err_msg}")
+            if hasattr(self, 'speak_announcement'):
+                self.speak_announcement(f"Error: {err_msg}")
             return
         if line.startswith("LOG:"):
             msg = line[4:].strip()
-            if ("error" in msg.lower() or "failed" in msg.lower()) and not self.has_error:
+            if msg.lower().startswith("error:") and not self.has_error:
                 self.has_error = True
                 self.last_error_msg = msg
                 self.status_label.set_markup(f"<span color='#d32f2f'><b>Error: {GLib.markup_escape_text(msg)}</b></span>")
@@ -785,34 +803,122 @@ class Hear2ReadProgressWindow(Gtk.Window):
                 if not self.scrolled_window.get_visible():
                     self.toggle_details(None)
                 self.play_accessibility_sound(force=True)
-                self.speak_announcement(f"Error: {msg}")
+                if hasattr(self, 'speak_announcement'):
+                    self.speak_announcement(f"Error: {msg}")
                 return
             self.append_log(msg)
             self.play_accessibility_sound()
             return
-        if line in ("COMPLETE", "FINISHED"):
-            self.on_complete()
+        if line in ("COMPLETE", "FINISHED") or line.startswith("COMPLETE:"):
+            payload = line.split(":", 1)[1] if ":" in line else ""
+            self.on_complete(payload)
             return
         self.append_log(line)
         self.play_accessibility_sound()
 
-    def on_complete(self):
+    def on_complete(self, payload=""):
         if self.is_completed or self.has_error:
             return
         self.is_completed = True
+
+        lang_name_map = {
+            "as": "Assamese", "bn": "Bengali", "gu": "Gujarati", "hi": "Hindi",
+            "kn": "Kannada", "ml": "Malayalam", "mr": "Marathi", "ne": "Nepali",
+            "or": "Odia", "pa": "Punjabi", "ta": "Tamil", "te": "Telugu",
+            "ur": "Urdu", "en": "English"
+        }
+
+        # Check installed voice models on disk to confirm ground truth
+        installed_langs = []
+        installed_voices = []
+        for vdir in ["/usr/share/hear2read/Voices", os.path.expanduser("~/.local/share/hear2read/Voices")]:
+            if os.path.isdir(vdir):
+                for f in sorted(os.listdir(vdir)):
+                    if f.endswith(".onnx"):
+                        vname = f[:-5]
+                        if vname not in installed_voices:
+                            installed_voices.append(vname)
+                        lcode = f.split("-")[0]
+                        if lcode not in installed_langs:
+                            installed_langs.append(lcode)
+
+        is_all_removed = (payload == "ALL_REMOVED") or (len(installed_langs) == 0 and not payload.startswith("INSTALLED"))
+
+        if is_all_removed:
+            self.update_progress(100, "All Voices Removed")
+            self.sub_label.set_text("All Hear2Read voice models have been removed. System speech reverted to eSpeak.")
+            self.append_log("[✓] All Hear2Read voice models removed. Reverted to eSpeak.")
+            self.play_complete_sound()
+            if hasattr(self, 'speak_announcement'):
+                self.speak_announcement("All Hear2Read voices removed. System speech has reverted to eSpeak.")
+
+            dialog = Gtk.MessageDialog(
+                transient_for=self,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.NONE,
+                text="All Hear2Read Voices Removed"
+            )
+            dialog.set_modal(True)
+            dialog.set_destroy_with_parent(True)
+            dialog.set_title("Hear2Read Voice Models Removed")
+            dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+            dialog.set_keep_above(True)
+            dialog.format_secondary_text(
+                "All Hear2Read Indic voice models have been removed from your system.\n\n"
+                "System Speech & Orca Screen Reader:\n"
+                "• Speech Synthesizer: espeak-ng (eSpeak)\n"
+                "• Default Voice: English / system default\n"
+                "• Speech Dispatcher routing for Hear2Read has been cleared.\n\n"
+                "Your screen reader will now use eSpeak for all speech."
+            )
+            btn_close = dialog.add_button("_Close", Gtk.ResponseType.CLOSE)
+            btn_close.set_can_default(True)
+            dialog.set_default_response(Gtk.ResponseType.CLOSE)
+            btn_close.grab_focus()
+            self.present()
+            dialog.show_all()
+            dialog.present()
+            dialog.run()
+            dialog.destroy()
+            Gtk.main_quit()
+            return
+
+        # Normal completion with installed voices
         self.update_progress(100, "Setup Complete!")
         self.sub_label.set_text("Hear2Read Indic TTS has been installed and configured.")
         self.append_log("[✓] Installation and configuration successfully completed.")
         self.play_complete_sound()
+        if hasattr(self, 'speak_announcement'):
+            self.speak_announcement("Hear2Read installation completed successfully!")
 
-        # Show an accessible modal completion confirmation dialog
+        active_codes = installed_langs
+        default_voice = installed_voices[0] if installed_voices else ""
+        if payload.startswith("INSTALLED:"):
+            parts = payload[10:].split("|")
+            if len(parts) >= 1 and parts[0].strip():
+                active_codes = parts[0].strip().split()
+            if len(parts) >= 2 and parts[1].strip():
+                default_voice = parts[1].strip()
+
+        lang_labels = []
+        for code in active_codes:
+            name = lang_name_map.get(code, code.upper())
+            lang_labels.append(f"{name} ({code})")
+
+        langs_formatted = ", ".join(lang_labels) if lang_labels else "None"
+
         dialog = Gtk.MessageDialog(
             transient_for=self,
-            modal=True,
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.NONE,
-            text="Hear2Read Installation Completed Successfully!"
+            text="Hear2Read Setup Completed Successfully!"
         )
+        dialog.set_modal(True)
+        dialog.set_destroy_with_parent(True)
+        dialog.set_title("Hear2Read Setup Complete")
+        dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+        dialog.set_keep_above(True)
+
         dialog.format_secondary_text(
             "The Hear2Read Indic TTS module and selected voice models have been successfully installed.\n\n"
             "To use with Orca Screen Reader:\n"
@@ -827,33 +933,55 @@ class Hear2ReadProgressWindow(Gtk.Window):
         dialog.set_default_response(Gtk.ResponseType.YES)
         btn_open.grab_focus()
 
+        self.present()
+        dialog.show_all()
+        dialog.present()
         res = dialog.run()
         dialog.destroy()
 
         if res == Gtk.ResponseType.YES:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            mgr_candidates = [
-                os.path.expanduser("~/.local/share/hear2read/hear2read_manager.py"),
-                os.path.join(script_dir, "hear2read_manager.py"),
-                os.path.join(script_dir, "installer", "hear2read_manager.py"),
-                "/usr/share/hear2read/hear2read_manager.py",
-                os.path.expanduser("~/.local/bin/hear2read-manager"),
-                "/usr/local/bin/hear2read-manager"
-            ]
-            for mgr in mgr_candidates:
-                if os.path.isfile(mgr):
-                    try:
-                        subprocess.Popen(
-                            [sys.executable, mgr],
-                            start_new_session=True,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            close_fds=True
-                        )
-                    except Exception:
-                        subprocess.Popen([sys.executable, mgr], start_new_session=True)
-                    break
+            launched = False
+            try:
+                proc = subprocess.Popen(
+                    ["gtk-launch", "hear2read-preferences"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                launched = True
+            except Exception:
+                launched = False
+
+            if not launched:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                mgr_candidates = [
+                    "/usr/local/bin/hear2read-manager",
+                    "/usr/bin/hear2read-manager",
+                    os.path.expanduser("~/.local/bin/hear2read-manager"),
+                    "/usr/share/hear2read/hear2read_manager.py",
+                    os.path.expanduser("~/.local/share/hear2read/hear2read_manager.py"),
+                    os.path.join(script_dir, "hear2read_manager.py"),
+                    os.path.join(script_dir, "installer", "hear2read_manager.py")
+                ]
+                launch_env = os.environ.copy()
+                launch_env["NO_AT_BRIDGE"] = "1"
+                for mgr in mgr_candidates:
+                    if os.path.isfile(mgr):
+                        try:
+                            cmd = [sys.executable, mgr] if mgr.endswith(".py") else [mgr]
+                            subprocess.Popen(
+                                cmd,
+                                env=launch_env,
+                                start_new_session=True,
+                                stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                close_fds=True
+                            )
+                            break
+                        except Exception:
+                            cmd = [sys.executable, mgr] if mgr.endswith(".py") else [mgr]
+                            subprocess.Popen(cmd, env=launch_env, start_new_session=True)
+                            break
         Gtk.main_quit()
 
     def on_eof(self):
@@ -873,7 +1001,8 @@ class Hear2ReadProgressWindow(Gtk.Window):
                     sec_text = (
                         f"{err}\n\n"
                         "Root privileges are required to configure Speech Dispatcher and install Hear2Read.\n\n"
-                        "Please re-run the installer and authorize when prompted."
+                        "Please re-run the installer and authorize when prompted, or execute in a terminal:\n"
+                        "sudo bash download_and_install_hear2read_module_and_voices.sh"
                     )
                 else:
                     sec_text = (
@@ -881,10 +1010,23 @@ class Hear2ReadProgressWindow(Gtk.Window):
                         "Please check your internet connection or terminal logs and re-run the installer."
                     )
                 dialog.format_secondary_text(sec_text)
+                dialog.set_keep_above(True)
+                self.present()
                 dialog.run()
                 dialog.destroy()
                 Gtk.main_quit()
             else:
+                # If no error occurred and pipeline finished, check if installation succeeded
+                if self.progress_bar.get_fraction() >= 0.85:
+                    self.on_complete()
+                    return
+                # Check if voice models exist on disk
+                vdirs = ["/usr/share/hear2read/Voices", os.path.expanduser("~/.local/share/hear2read/Voices")]
+                has_voices = any(os.path.isdir(d) and any(f.endswith(".onnx") for f in os.listdir(d)) for d in vdirs)
+                if has_voices:
+                    self.on_complete()
+                    return
+
                 self.status_label.set_markup("<span color='#d32f2f'><b>Installation Incomplete</b></span>")
                 self.sub_label.set_text("Installation process terminated unexpectedly.")
                 dialog = Gtk.MessageDialog(
@@ -898,6 +1040,8 @@ class Hear2ReadProgressWindow(Gtk.Window):
                     "The installation process terminated before finishing.\n\n"
                     "Please check your internet connection or terminal logs and re-run the installer."
                 )
+                dialog.set_keep_above(True)
+                self.present()
                 dialog.run()
                 dialog.destroy()
                 Gtk.main_quit()
@@ -1095,7 +1239,9 @@ run_installation_pipeline() {
         # Always prioritize local updated tar.gz from script directory, current dir, or Downloads
         LOCAL_BUNDLE=""
         for lcand in "$SCRIPT_DIR/hear2read-linux.tar.gz" \
+                     "$SCRIPT_DIR/../hear2read-linux.tar.gz" \
                      "$PWD/hear2read-linux.tar.gz" \
+                     "$PWD/../hear2read-linux.tar.gz" \
                      "$HOME/Downloads/hear2read-linux.tar.gz"; do
             if [ -f "$lcand" ] && [ -s "$lcand" ]; then
                 LOCAL_BUNDLE="$lcand"
@@ -1164,6 +1310,8 @@ run_installation_pipeline() {
         BIN_SRC=""
         if [ -f "$SCRIPT_DIR/sd_hear2read" ]; then
             BIN_SRC="$SCRIPT_DIR/sd_hear2read"
+        elif [ -f "$SCRIPT_DIR/../sd_hear2read" ]; then
+            BIN_SRC="$SCRIPT_DIR/../sd_hear2read"
         elif [ -f "sd_hear2read" ]; then
             BIN_SRC="$(pwd)/sd_hear2read"
         elif [ -f "$MODULE_SYS/sd_hear2read" ]; then
@@ -1371,9 +1519,11 @@ run_installation_pipeline() {
 
     # Queue staged voices for system-wide installation
     if [ "$HAS_ROOT" -eq 1 ] && [ -d "$VOICES_STAGING" ]; then
-        run_as_root mkdir -p "$VOICES_DIR_SYS"
-        run_as_root cp -rn "$VOICES_STAGING"/* "$VOICES_DIR_SYS/"
-        run_as_root chmod -R 755 "$VOICES_DIR_SYS"
+        if [ -n "$(ls -A "$VOICES_STAGING" 2>/dev/null)" ]; then
+            run_as_root mkdir -p "$VOICES_DIR_SYS"
+            run_as_root cp -rn "$VOICES_STAGING"/* "$VOICES_DIR_SYS/"
+            run_as_root chmod -R 755 "$VOICES_DIR_SYS"
+        fi
     fi
 
     echo "65"
@@ -1448,9 +1598,99 @@ MODULE_CONF
     rm -f "$HOME/.config/speech-dispatcher/modules/hear2read.conf" 2>/dev/null || true
     echo "LOG: Configured hear2read.conf with ${#DISCOVERED_LANGS[@]} configured Indic voice(s)."
     if [ "${#DISCOVERED_LANGS[@]}" -eq 0 ]; then
-        echo "ERROR: No Indic voice models are available to configure."
-        echo "LOG: Error: At least one voice model must be present to configure Hear2Read."
-        exit 1
+        # ==============================================================================
+        # ALL VOICES REMOVED: Clean revert to default eSpeak
+        # ==============================================================================
+        echo "LOG: No Indic voice models remain. Reverting system speech to eSpeak..."
+
+        # Remove hear2read from system speechd.conf
+        if [ -f "$SPEECHD_CONF" ]; then
+            local tmp_revert="/tmp/speechd_revert_$$.conf"
+            grep -v -E '(sd_hear2read|LanguageDefaultModule .* "hear2read"|# Hear2Read Synthesiser Module)' "$SPEECHD_CONF" > "$tmp_revert" || true
+            run_as_root cp -f "$tmp_revert" "$SPEECHD_CONF"
+            run_as_root chmod 644 "$SPEECHD_CONF"
+            rm -f "$tmp_revert" 2>/dev/null || true
+        fi
+
+        # Also purge hear2read from user-level speechd.conf if present
+        local user_spd="$HOME/.config/speech-dispatcher/speechd.conf"
+        if [ -f "$user_spd" ]; then
+            local tmp_user_revert="/tmp/user_spd_revert_$$.conf"
+            grep -v -E '(sd_hear2read|LanguageDefaultModule .* "hear2read"|# Hear2Read Synthesiser Module)' "$user_spd" > "$tmp_user_revert" || true
+            cp -f "$tmp_user_revert" "$user_spd" 2>/dev/null || true
+            rm -f "$tmp_user_revert" 2>/dev/null || true
+        fi
+
+        # Remove hear2read module configuration file
+        run_as_root rm -f "$CONF_SYS" 2>/dev/null || true
+        rm -f "$HOME/.config/speech-dispatcher/modules/hear2read.conf" 2>/dev/null || true
+
+        # Flush all queued root operations now
+        flush_root
+
+        # Revert Orca preferences back to default eSpeak across all profiles
+        python3 -c '
+import json, os
+p = os.path.expanduser("~/.local/share/orca/user-settings.conf")
+if os.path.isfile(p):
+    try:
+        with open(p, "r") as f:
+            data = json.load(f)
+
+        def clean_section(sec):
+            if not isinstance(sec, dict):
+                return
+            sec["enableSpeech"] = True
+            sec["speechServerFactory"] = "orca.speechdispatcherfactory"
+            sec["speechServerInfo"] = ["Default Synthesizer", "default"]
+            voices = sec.get("voices", {})
+            for key in list(voices.keys()):
+                fam = voices[key].get("family", {})
+                name = str(fam.get("name", "")).lower()
+                lang = str(fam.get("lang", "")).lower()
+                if any(term in name for term in ["tdil", "hear2read", "zha"]) or (lang and lang != "en"):
+                    del voices[key]
+            if "default" in voices:
+                voices["default"].setdefault("family", {})["lang"] = "en"
+                voices["default"]["family"].pop("name", None)
+
+        clean_section(data.setdefault("general", {}))
+        for prof in data.get("profiles", {}).values():
+            clean_section(prof)
+
+        with open(p, "w") as f:
+            json.dump(data, f, indent=2)
+        print("LOG: Orca preferences reverted to Default Synthesizer across all profiles.")
+    except Exception as ex:
+        print("LOG: Warning: Could not update Orca preferences:", ex)
+' 2>/dev/null || true
+
+        # Restart Speech Dispatcher cleanly
+        if command -v systemctl >/dev/null 2>&1; then
+            timeout 3s systemctl --user stop speech-dispatcher.service 2>/dev/null || true
+            timeout 3s systemctl --user stop speech-dispatcher.socket 2>/dev/null || true
+        fi
+        killall -9 speech-dispatcher sd_hear2read 2>/dev/null || true
+        rm -rf "/run/user/$(id -u)/speech-dispatcher"/* 2>/dev/null || true
+        if command -v systemctl >/dev/null 2>&1; then
+            timeout 3s systemctl --user daemon-reload 2>/dev/null || true
+            timeout 5s systemctl --user --no-block restart speech-dispatcher.socket 2>/dev/null || true
+            timeout 5s systemctl --user --no-block restart speech-dispatcher.service 2>/dev/null || true
+        fi
+        sleep 0.5
+
+        # Reload Orca cleanly if running so it picks up the eSpeak revert
+        if pgrep -f "[o]rca" >/dev/null 2>&1; then
+            echo "LOG: Reloading Orca with default eSpeak settings..."
+            (orca --replace >/dev/null 2>&1 </dev/null &)
+        fi
+
+        echo "100"
+        echo "# All Hear2Read voice models removed."
+        echo "LOG: All Indic voice models have been removed. System speech has reverted to eSpeak."
+        echo "COMPLETE:ALL_REMOVED"
+        sleep 1.0
+        return 0
     fi
 
     # Dynamic update of speechd.conf
@@ -1469,11 +1709,6 @@ MODULE_CONF
         echo "" >> "$tmp_spd"
         echo '# Hear2Read Synthesiser Module' >> "$tmp_spd"
         echo 'AddModule "hear2read" "sd_hear2read" "/etc/speech-dispatcher/modules/hear2read.conf"' >> "$tmp_spd"
-
-        # 3. For each currently installed language, register as default module
-        for lc in "${DISCOVERED_LANGS[@]}"; do
-            echo "LanguageDefaultModule \"$lc\" \"hear2read\"" >> "$tmp_spd"
-        done
 
         # 4. Write back
         if [ "$use_root" -eq 1 ] && [ "$HAS_ROOT" -eq 1 ]; then
@@ -1500,6 +1735,50 @@ MODULE_CONF
 
     echo "78"
     echo "LOG: Speech Dispatcher dynamic routing updated successfully."
+
+    # Sync Orca preferences to point at Hear2Read with the first installed language
+    if [ -n "$DEFAULT_VOICE" ] && [ "${#DISCOVERED_LANGS[@]}" -gt 0 ]; then
+        first_lang="${DISCOVERED_LANGS[0]}"
+        echo "LOG: Synchronizing Orca preferences to Hear2Read ($first_lang / $DEFAULT_VOICE)..."
+        python3 -c "
+import json, os
+p = os.path.expanduser('~/.local/share/orca/user-settings.conf')
+os.makedirs(os.path.dirname(p), exist_ok=True)
+data = {}
+if os.path.isfile(p):
+    try:
+        with open(p, 'r') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+gen = data.setdefault('general', {})
+gen['enableSpeech'] = True
+gen['speechServerFactory'] = 'orca.speechdispatcherfactory'
+gen['speechServerInfo'] = ['Hear2Read', 'hear2read']
+voices = gen.setdefault('voices', {})
+dv = voices.setdefault('default', {})
+fam = dv.setdefault('family', {})
+fam['lang'] = '$first_lang'
+fam['name'] = '$DEFAULT_VOICE'
+dv['established'] = True
+data['general'] = gen
+for prof in data.get('profiles', {}).values():
+    if isinstance(prof, dict):
+        prof['speechServerInfo'] = ['Hear2Read', 'hear2read']
+        pv = prof.setdefault('voices', {})
+        pdv = pv.setdefault('default', {})
+        pfam = pdv.setdefault('family', {})
+        pfam['lang'] = '$first_lang'
+        pfam['name'] = '$DEFAULT_VOICE'
+        pdv['established'] = True
+try:
+    with open(p, 'w') as f:
+        json.dump(data, f, indent=2)
+    print('LOG: Orca preferences synced to Hear2Read across all profiles.')
+except Exception as ex:
+    print('LOG: Warning: Could not sync Orca preferences:', ex)
+" 2>/dev/null || true
+    fi
     sleep 0.5
 
     # ==============================================================================
@@ -1541,6 +1820,7 @@ MODULE_CONF
             run_as_root mkdir -p /usr/share/hear2read /usr/local/bin
             run_as_root cp -f "$HELPERS_STAGE/hear2read_manager.py" /usr/share/hear2read/hear2read_manager.py
             run_as_root chmod 755 /usr/share/hear2read/hear2read_manager.py
+            run_as_root rm -f /usr/local/bin/hear2read-manager
             run_as_root ln -sf /usr/share/hear2read/hear2read_manager.py /usr/local/bin/hear2read-manager
         fi
     fi
@@ -1587,7 +1867,7 @@ Type=Application
 Name=Hear2Read Settings
 GenericName=Speech Synthesizer Settings
 Comment=Configure Hear2Read and eSpeak dual-engine routing for Orca
-Exec=sh -c "if [ -x \$HOME/.local/bin/hear2read-manager ]; then exec \$HOME/.local/bin/hear2read-manager; elif [ -x /usr/local/bin/hear2read-manager ]; then exec /usr/local/bin/hear2read-manager; elif [ -f \$HOME/.local/share/hear2read/hear2read_manager.py ]; then exec python3 \$HOME/.local/share/hear2read/hear2read_manager.py; elif [ -f /usr/share/hear2read/hear2read_manager.py ]; then exec python3 /usr/share/hear2read/hear2read_manager.py; else exec hear2read-manager; fi"
+Exec=env NO_AT_BRIDGE=1 hear2read-manager
 Icon=preferences-desktop-accessibility
 Terminal=false
 Categories=Settings;Accessibility;
@@ -1605,6 +1885,8 @@ elif [ -f /usr/share/hear2read/hear2read_manager.py ]; then
     exec python3 /usr/share/hear2read/hear2read_manager.py "$@"
 elif [ -x /usr/local/bin/hear2read-manager ]; then
     exec /usr/local/bin/hear2read-manager "$@"
+elif [ -x /usr/bin/hear2read-manager ]; then
+    exec /usr/bin/hear2read-manager "$@"
 fi
 WRAPPER_EOF
     chmod +x "$HOME/.local/bin/hear2read-manager"
@@ -1616,12 +1898,13 @@ WRAPPER_EOF
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
     if [ "$HAS_ROOT" -eq 1 ]; then
-        run_as_root mkdir -p /usr/share/applications /usr/local/bin
+        run_as_root mkdir -p /usr/share/applications /usr/local/bin /usr/bin
         run_as_root cp -f "$TMP_DESKTOP" /usr/share/applications/hear2read-preferences.desktop
         run_as_root rm -f /usr/share/applications/hear2read-synthesiser.desktop
         run_as_root chmod 644 /usr/share/applications/hear2read-preferences.desktop
-        run_as_root cp -f "$HOME/.local/bin/hear2read-manager" /usr/local/bin/hear2read-manager
-        run_as_root chmod 755 /usr/local/bin/hear2read-manager
+        run_as_root rm -f /usr/local/bin/hear2read-manager /usr/bin/hear2read-manager
+        run_as_root ln -sf /usr/share/hear2read/hear2read_manager.py /usr/local/bin/hear2read-manager
+        run_as_root ln -sf /usr/share/hear2read/hear2read_manager.py /usr/bin/hear2read-manager
         run_as_root update-desktop-database /usr/share/applications 2>/dev/null || true
     fi
 
@@ -1645,7 +1928,8 @@ WRAPPER_EOF
     echo "# Step 5/6: Restarting Speech Dispatcher service..."
     echo "LOG: Terminating active Speech Dispatcher and sd_hear2read processes..."
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user stop speech-dispatcher.service speech-dispatcher.socket 2>/dev/null || true
+        timeout 3s systemctl --user stop speech-dispatcher.service 2>/dev/null || true
+        timeout 3s systemctl --user stop speech-dispatcher.socket 2>/dev/null || true
     fi
     killall -9 sd_hear2read speech-dispatcher 2>/dev/null || true
     pkill -9 -f speech-dispatcher 2>/dev/null || true
@@ -1664,22 +1948,23 @@ WRAPPER_EOF
 
     echo "LOG: Starting Speech Dispatcher service..."
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user restart speech-dispatcher.socket 2>/dev/null || true
-        systemctl --user restart speech-dispatcher.service 2>/dev/null || true
+        timeout 3s systemctl --user daemon-reload 2>/dev/null || true
+        timeout 5s systemctl --user --no-block restart speech-dispatcher.socket 2>/dev/null || true
+        timeout 5s systemctl --user --no-block restart speech-dispatcher.service 2>/dev/null || true
     fi
 
     # Fallback if socket is not bound
+    sleep 0.5
     if [ ! -S "/run/user/$(id -u)/speech-dispatcher/speechd.sock" ]; then
-        speech-dispatcher 2>/dev/null &
+        (speech-dispatcher -d >/dev/null 2>&1 </dev/null &)
     fi
 
-    # Wait 1.0 second for speech-dispatcher server socket to bind cleanly
-    sleep 1.0
+    # Wait 0.5 second for speech-dispatcher server socket to bind cleanly
+    sleep 0.5
 
     if pgrep -f "[o]rca" >/dev/null 2>&1; then
         echo "LOG: Refreshing Orca screen reader connection..."
-        orca --replace &
+        (orca --replace >/dev/null 2>&1 </dev/null &)
     fi
 
     echo "LOG: Speech Dispatcher service restarted successfully."
@@ -1700,7 +1985,7 @@ WRAPPER_EOF
     echo "# Step 6/6: Setup complete! Launching Preferences Manager..."
     echo "LOG: Hear2Read Indic TTS setup finished successfully."
     echo "LOG: Dual-engine routing configured for Orca Screen Reader."
-    echo "COMPLETE"
+    echo "COMPLETE:INSTALLED:${DISCOVERED_LANGS[*]} | $DEFAULT_VOICE"
     sleep 1.0
 }
 
