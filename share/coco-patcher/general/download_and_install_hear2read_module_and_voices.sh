@@ -963,7 +963,7 @@ class Hear2ReadProgressWindow(Gtk.Window):
                     os.path.join(script_dir, "installer", "hear2read_manager.py")
                 ]
                 launch_env = os.environ.copy()
-                launch_env["NO_AT_BRIDGE"] = "1"
+                launch_env.pop("NO_AT_BRIDGE", None)
                 for mgr in mgr_candidates:
                     if os.path.isfile(mgr):
                         try:
@@ -1682,7 +1682,13 @@ if os.path.isfile(p):
         # Reload Orca cleanly if running so it picks up the eSpeak revert
         if pgrep -f "[o]rca" >/dev/null 2>&1; then
             echo "LOG: Reloading Orca with default eSpeak settings..."
-            (orca --replace >/dev/null 2>&1 </dev/null &)
+            if command -v systemd-run >/dev/null 2>&1; then
+                systemd-run --user orca --replace >/dev/null 2>&1 || setsid orca --replace </dev/null >/dev/null 2>&1 &
+            elif command -v setsid >/dev/null 2>&1; then
+                setsid orca --replace </dev/null >/dev/null 2>&1 &
+            else
+                nohup orca --replace </dev/null >/dev/null 2>&1 &
+            fi
         fi
 
         echo "100"
@@ -1867,7 +1873,7 @@ Type=Application
 Name=Hear2Read Settings
 GenericName=Speech Synthesizer Settings
 Comment=Configure Hear2Read and eSpeak dual-engine routing for Orca
-Exec=env NO_AT_BRIDGE=1 hear2read-manager
+Exec=hear2read-manager
 Icon=preferences-desktop-accessibility
 Terminal=false
 Categories=Settings;Accessibility;
@@ -1956,7 +1962,11 @@ WRAPPER_EOF
     # Fallback if socket is not bound
     sleep 0.5
     if [ ! -S "/run/user/$(id -u)/speech-dispatcher/speechd.sock" ]; then
-        (speech-dispatcher -d >/dev/null 2>&1 </dev/null &)
+        if command -v setsid >/dev/null 2>&1; then
+            setsid speech-dispatcher -d </dev/null >/dev/null 2>&1 &
+        else
+            nohup speech-dispatcher -d </dev/null >/dev/null 2>&1 &
+        fi
     fi
 
     # Wait 0.5 second for speech-dispatcher server socket to bind cleanly
@@ -1964,7 +1974,13 @@ WRAPPER_EOF
 
     if pgrep -f "[o]rca" >/dev/null 2>&1; then
         echo "LOG: Refreshing Orca screen reader connection..."
-        (orca --replace >/dev/null 2>&1 </dev/null &)
+        if command -v systemd-run >/dev/null 2>&1; then
+            systemd-run --user orca --replace >/dev/null 2>&1 || setsid orca --replace </dev/null >/dev/null 2>&1 &
+        elif command -v setsid >/dev/null 2>&1; then
+            setsid orca --replace </dev/null >/dev/null 2>&1 &
+        else
+            nohup orca --replace </dev/null >/dev/null 2>&1 &
+        fi
     fi
 
     echo "LOG: Speech Dispatcher service restarted successfully."
