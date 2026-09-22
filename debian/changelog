@@ -1,3 +1,10 @@
+coco-patcher (0.2.4.1) jammy; urgency=medium
+
+  * Add unified script to install Hear2Read-NG, its Speech Dispatcher module, and voices
+  * Thorium Reader installation script updated
+
+ -- Nalin <nalin.x.linux@gmail.com>  Tue, 22 Sep 2026 08:43:02 +0530
+
 coco-patcher (0.2.1.1) jammy; urgency=medium
 
   * Scripts for installing local LLM's added
