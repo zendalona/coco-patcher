@@ -1,4 +1,23 @@
-coco-patcher (0.2.4.1) jammy; urgency=medium
+coco-patcher (0.2.5.3) resolute; urgency=medium
+
+  * Update PPA scripts to point to official ppa:zendalona-ac/accessible-coconut
+    (maths-tutor, snakes-and-ladders, lios, ibus-braille & sbw).
+  * Update WineHQ installation script for Ubuntu 26.04 Resolute.
+  * Update TeamViewer script to install directly via apt-get instead of gdebi.
+  * Remove obsolete/pre-installed scripts for 26.04 (fix-bluetooth-microphone,
+    install-or-update-Accessible-Telegram, install-thorium-reader,
+    update-orca-to-version-44.2).
+
+ -- Mukthar <musthafalmukthar7@gmail.com>  Thu, 29 Oct 2026 10:25:00 +0530
+
+coco-patcher (0.2.5.2) resolute; urgency=medium
+
+  * Update dependency from policykit-1 to pkexec | policykit-1 for
+    compatibility with Ubuntu 26.04 Resolute.
+
+ -- Mukthar <musthafalmukthar7@gmail.com>  Tue, 27 Oct 2026 15:00:00 +0530
+
+coco-patcher (0.2.5.1) jammy; urgency=medium
 
   * Add unified script to install Hear2Read-NG, its Speech Dispatcher module, and voices
   * Thorium Reader installation script updated
@@ -26,115 +45,55 @@ coco-patcher (0.1.9.1) jammy; urgency=medium
 
 coco-patcher (0.1.8.1) jammy; urgency=medium
 
-  * fix-bluetooth-microphone script added
-  * install-or-update-maths-tutor script added
-  * install-or-update-snakes-and-ladders script added
+  * TeamViewer installation script fixed.
 
- -- Nalin <nalin.x.linux@gmail.com>  Sun, 07 Jan 2024 12:20:09 +0530
-
-coco-patcher (0.1.7.2) jammy; urgency=medium
-
-  * Removed script for installing canon lide-300-400 scanner driver
-  * IBus-Braille and Sharada-Braille-Writer script updated 
-  * Orca git version  installation script updated for removing orca packages before installation
-  * Lios script updated for confirming ppa added before updating
-  * Wine installer script updated
-  * TeamViewer installer script updated for avoiding installation of partially downloaded package
-
- -- Nalin <nalin.x.linux@gmail.com>  Wed, 14 Dec 2022 23:56:16 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Thu, 22 Feb 2024 13:06:45 +0530
 
 coco-patcher (0.1.7.1) jammy; urgency=medium
 
-  * Updated for Accessible-Coconut 22.04
-  * Wine installation script updated
+  * WineHQ Stable installation script added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Sat, 03 Dec 2022 19:48:11 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Sat, 07 Oct 2023 15:44:45 +0530
 
-coco-patcher (0.1.6.1) focal; urgency=medium
+coco-patcher (0.1.6.1) jammy; urgency=medium
 
-  * Script for compiling and installing RHVoice added
+  * Script to fix Canon Lide 300 & 400 scanner added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Wed, 13 Jul 2022 20:59:40 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Wed, 04 Oct 2023 14:10:45 +0530
 
-coco-patcher (0.1.6) focal; urgency=medium
+coco-patcher (0.1.5.1) jammy; urgency=medium
 
-  * Installation scripts of IBus-Braille and Sharada-Braille-Writer merged
+  * Update to Lios script added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Tue, 12 Jul 2022 13:17:17 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Tue, 03 Oct 2023 17:15:45 +0530
 
-coco-patcher (0.1.5) focal; urgency=medium
+coco-patcher (0.1.4.1) jammy; urgency=medium
 
-  * sharada-braille-writer script updated
-  * theeram script updated
+  * Script to fix Bluetooth Microphone issues added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Wed, 13 Oct 2021 22:48:08 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Tue, 03 Oct 2023 12:45:45 +0530
 
-coco-patcher (0.1.4) focal; urgency=medium
+coco-patcher (0.1.3.1) jammy; urgency=medium
 
-  * Script for installing/updating sharada-braille-writer
-  * Show only relative path from /usr/share/coco-patcher/ 
-    while listing scripts
+  * Update to ibus-braille & sharada-braille-writer script added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Fri, 08 Oct 2021 14:35:21 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Tue, 03 Oct 2023 11:45:45 +0530
 
-coco-patcher (0.1.3.6) focal; urgency=medium
+coco-patcher (0.1.2.1) jammy; urgency=medium
 
-  * Script for updating 20.04.03 to 20.04.04.
-  * Script for installing Skype
+  * Snap Store installation script added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Thu, 15 Apr 2021 21:27:26 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Mon, 02 Oct 2023 18:35:45 +0530
 
-coco-patcher (0.1.3.5) focal; urgency=medium
+coco-patcher (0.1.1.1) jammy; urgency=medium
 
-  * Script for installing snap store
+  * Safe Graphics Mode Boot Parameter Script added.
 
- -- Nalin <nalin.x.linux@gmail.com>  Mon, 05 Apr 2021 10:55:48 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Mon, 02 Oct 2023 17:14:45 +0530
 
-coco-patcher (0.1.3.4) focal; urgency=medium
+coco-patcher (0.1.0.1) jammy; urgency=medium
 
-  * Suppress error message from ls.
-  * Cancel label changed to Exit.
+  * Initial Release.
 
- -- Nalin <nalin.x.linux@gmail.com>  Sat, 03 Apr 2021 21:59:58 +0530
+ -- Nalin <nalin.x.linux@gmail.com>  Mon, 02 Oct 2023 11:23:45 +0530
 
-coco-patcher (0.1.3.3) focal; urgency=medium
-
-  * Script for set-boot-parameter-to-safe-graphics-mode.
-  * Notify user on coco-patcher update fails.
-  * Window size increased 600x400.
-  * dummy script removed.
- -- Nalin <nalin.x.linux@gmail.com>  Sat, 03 Apr 2021 20:43:19 +0530
-
-coco-patcher (0.1.3.2) focal; urgency=medium
-
-  * Relaunch coco-patcher after update.
-  * Script for updating orca to git version.
-  * Script for installing TeamViewer.
-  * Script for fixing CanonScan Lide 300/400 drivers.
-  * Script for updating IBus-Braille 
-
- -- Nalin <nalin.x.linux@gmail.com>  Fri, 02 Apr 2021 21:04:54 +0530
-
-coco-patcher (0.1.3.1) focal; urgency=medium
-
-  * Script for installing theeram malayalam dictionary added
-
- -- Nalin <nalin.x.linux@gmail.com>  Fri, 08 Jan 2021 17:15:24 +0530
-
-coco-patcher (0.1.3) focal; urgency=medium
-
-  * Wine installer script install-wine-stable-from-wineHQ.sh added
-
- -- Nalin <nalin.x.linux@gmail.com>  Wed, 04 Nov 2020 00:32:53 +0530
-
-coco-patcher (0.1.2) focal; urgency=medium
-
-  * Scripts updated
-
- -- Nalin <nalin.x.linux@gmail.com>  Tue, 20 Oct 2020 17:18:29 +0530
-
-coco-patcher (0.1.1) focal; urgency=medium
-
-  * Initial release.
-
- -- Nalin <nalin.x.linux@gmail.com>  Tue, 20 Oct 2020 12:20:52 +0530

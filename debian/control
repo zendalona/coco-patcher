@@ -10,7 +10,7 @@ Package: coco-patcher
 Architecture: all
 Depends:
  ${misc:Depends},
- policykit-1,
+ pkexec | policykit-1,
  zenity,
  grep
 Description: The package coco-patcher provides a GUI to patch Accessible-Coconut

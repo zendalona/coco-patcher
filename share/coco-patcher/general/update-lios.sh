@@ -1,11 +1,13 @@
 #!/bin/bash
 
-the_ppa=ppa.launchpad.net/nalin-x-linux/lios
-if ! grep -q "^deb .*$the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-    echo "Adding ppa.launchpad.net/nalin-x-linux/lios"
-    pkexec add-apt-repository ppa:nalin-x-linux/lios -y
+the_ppa="ppa.launchpad.net/zendalona-ac/accessible-coconut"
+if ! grep -q "$the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
+    echo "Adding ppa:zendalona-ac/accessible-coconut"
+    pkexec add-apt-repository ppa:zendalona-ac/accessible-coconut -y
 fi
 
+pkexec apt-get update
 pkexec apt-get install -y lios
+
 echo "Press any key to Quit"
 read -n 1
