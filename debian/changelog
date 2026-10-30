@@ -1,3 +1,9 @@
+coco-patcher (0.2.5.4) resolute; urgency=medium
+
+  * Dearmor WineHQ GPG key so APT recognizes the binary keyring format.
+
+ -- Mukthar <musthafalmukthar7@gmail.com>  Fri, 30 Oct 2026 09:30:00 +0530
+
 coco-patcher (0.2.5.3) resolute; urgency=medium
 
   * Update PPA scripts to point to official ppa:zendalona-ac/accessible-coconut
