@@ -1,3 +1,9 @@
+coco-patcher (0.2.5.5) resolute; urgency=medium
+
+  * Update Theeram installer script to point to official ppa:zendalona-ac/accessible-coconut.
+
+ -- Mukthar <musthafalmukthar7@gmail.com>  Mon, 02 Nov 2026 15:50:00 +0530
+
 coco-patcher (0.2.5.4) resolute; urgency=medium
 
   * Dearmor WineHQ GPG key so APT recognizes the binary keyring format.
