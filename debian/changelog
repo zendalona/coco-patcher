@@ -1,3 +1,9 @@
+coco-patcher (0.2.5.6) resolute; urgency=medium
+
+  * Add Google Chrome installation script.
+
+ -- Mukthar <musthafalmukthar7@gmail.com>  Wed, 18 Nov 2026 15:30:00 +0530
+
 coco-patcher (0.2.5.5) resolute; urgency=medium
 
   * Update Theeram installer script to point to official ppa:zendalona-ac/accessible-coconut.
